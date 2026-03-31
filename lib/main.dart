@@ -2,27 +2,16 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'firebase_options.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   runApp(const MyApp());
-}
-
-//////////////////// MODEL ////////////////////
-
-class Imovel {
-  final List<String> imagens;
-  final String endereco;
-  final String preco;
-  final String tipo;
-  bool ocupado;
-
-  Imovel({
-    required this.imagens,
-    required this.endereco,
-    required this.preco,
-    required this.tipo,
-    this.ocupado = false,
-  });
 }
 
 //////////////////// APP ////////////////////
@@ -46,14 +35,12 @@ class SplashPage extends StatefulWidget {
   State<SplashPage> createState() => _SplashPageState();
 }
 
-class _SplashPageState extends State<SplashPage>
-    with SingleTickerProviderStateMixin {
+class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateMixin {
   late AnimationController controller;
 
   @override
   void initState() {
     super.initState();
-
     controller = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
@@ -70,7 +57,7 @@ class _SplashPageState extends State<SplashPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.blue,
+      backgroundColor: Colors.blue[900],
       body: Center(
         child: FadeTransition(
           opacity: controller,
@@ -81,11 +68,7 @@ class _SplashPageState extends State<SplashPage>
               SizedBox(height: 20),
               Text(
                 'ADTEC',
-                style: TextStyle(
-                  color: Colors.red,
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(color: Colors.red, fontSize: 32, fontWeight: FontWeight.bold),
               )
             ],
           ),
@@ -95,7 +78,7 @@ class _SplashPageState extends State<SplashPage>
   }
 }
 
-//////////////////// HOME ////////////////////
+//////////////////// HOME (SISTEMA INTERNO) ////////////////////
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -106,32 +89,12 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   final ScrollController _scrollController = ScrollController();
-
   bool mostrarBotao = false;
   String filtroSelecionado = 'Todos';
-
-  final List<Imovel> todosImoveis = [
-    Imovel(
-      imagens: [],
-      endereco: 'Rua Bela Vista, 120',
-      preco: 'R\$ 350.000',
-      tipo: 'Venda',
-    ),
-    Imovel(
-      imagens: [],
-      endereco: 'Av. Central, 455',
-      preco: 'R\$ 1.200/mês',
-      tipo: 'Aluguel',
-    ),
-  ];
-
-  List<Imovel> imoveis = [];
 
   @override
   void initState() {
     super.initState();
-    imoveis = todosImoveis;
-
     _scrollController.addListener(() {
       setState(() {
         mostrarBotao = _scrollController.offset > 300;
@@ -142,56 +105,47 @@ class _HomePageState extends State<HomePage> {
   void filtrar(String tipo) {
     setState(() {
       filtroSelecionado = tipo;
-
-      if (tipo == 'Todos') {
-        imoveis = todosImoveis;
-      } else {
-        imoveis =
-            todosImoveis.where((i) => i.tipo == tipo).toList();
-      }
     });
   }
 
-  void adicionarImovel(Imovel novo) {
-    setState(() {
-      todosImoveis.add(novo);
-      filtrar(filtroSelecionado);
-    });
+  void abrirCadastro() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const CadastroPage()),
+    );
   }
 
   //////////////////// CARROSSEL ////////////////////
 
-  Widget _carrossel(List<String> imagens) {
+  Widget _carrossel(List<dynamic> imagens) {
     if (imagens.isEmpty) {
       return Container(
         height: 180,
         width: double.infinity,
         color: Colors.grey[300],
-        child: const Center(
-          child: Icon(Icons.image, size: 50),
-        ),
+        child: const Center(child: Icon(Icons.image, size: 50, color: Colors.grey)),
       );
     }
-
-    return SizedBox(
+    // TODO: Na Fase das fotos, vamos arrumar para puxar da internet
+    return Container(
       height: 180,
-      child: PageView(
-        children: imagens.map((path) {
-          return kIsWeb
-              ? Image.network(path,
-                  width: double.infinity,
-                  fit: BoxFit.cover)
-              : Image.file(File(path),
-                  width: double.infinity,
-                  fit: BoxFit.cover);
-        }).toList(),
-      ),
+      width: double.infinity,
+      color: Colors.grey[300],
+      child: const Center(child: Icon(Icons.photo_library, size: 50, color: Colors.blue)),
     );
   }
 
-  //////////////////// CARD ////////////////////
+  //////////////////// CARD COM AÇÕES DO FIREBASE ////////////////////
 
-  Widget _cardImovel(Imovel imovel) {
+  Widget _cardImovel(DocumentSnapshot documento) {
+    // Pegando os dados e o ID do documento no Firebase
+    Map<String, dynamic> imovel = documento.data() as Map<String, dynamic>;
+    String endereco = imovel['endereco'] ?? 'Sem endereço';
+    String preco = imovel['preco'] ?? 'R\$ 0,00';
+    String tipo = imovel['tipo'] ?? 'Venda';
+    bool ocupado = imovel['ocupado'] ?? false;
+    List<dynamic> imagens = imovel['imagens'] ?? [];
+
     return Container(
       margin: const EdgeInsets.all(12),
       child: Material(
@@ -201,115 +155,89 @@ class _HomePageState extends State<HomePage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             ClipRRect(
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(16)),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
               child: Stack(
                 children: [
-                  _carrossel(imovel.imagens),
-
+                  _carrossel(imagens),
                   Positioned(
                     top: 10,
                     left: 10,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
-                        color: imovel.tipo == 'Venda'
-                            ? Colors.green
-                            : Colors.blue,
+                        color: tipo == 'Venda' ? Colors.green : Colors.blue,
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
-                        imovel.tipo.toUpperCase(),
-                        style: const TextStyle(
-                            color: Colors.white, fontSize: 12),
+                        tipo.toUpperCase(),
+                        style: const TextStyle(color: Colors.white, fontSize: 12),
                       ),
                     ),
                   ),
                 ],
               ),
             ),
-
             Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(imovel.endereco,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 16)),
+                  Text(endereco, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                   const SizedBox(height: 5),
-                  Text(imovel.preco,
-                      style: const TextStyle(
-                          color: Colors.green,
-                          fontWeight: FontWeight.bold)),
+                  Text(preco, style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 10),
-
                   Row(
-                    mainAxisAlignment:
-                        MainAxisAlignment.spaceBetween,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Row(
                         children: [
                           Icon(
-                            imovel.ocupado
-                                ? Icons.cancel
-                                : Icons.check_circle,
-                            color: imovel.ocupado
-                                ? Colors.red
-                                : Colors.green,
+                            ocupado ? Icons.cancel : Icons.check_circle,
+                            color: ocupado ? Colors.red : Colors.green,
                           ),
                           const SizedBox(width: 5),
-                          Text(imovel.ocupado
-                              ? 'Ocupado'
-                              : 'Disponível'),
+                          Text(ocupado ? 'Ocupado' : 'Disponível'),
                         ],
                       ),
-
+                      // Botão para a atendente atualizar o banco de dados
                       ElevatedButton(
                         onPressed: () async {
                           bool? confirmar = await showDialog(
                             context: context,
                             builder: (_) => AlertDialog(
-                              title: const Text('Confirmar'),
+                              title: const Text('Atualizar Sistema'),
                               content: Text(
-                                imovel.tipo == 'Venda'
-                                    ? 'Tem certeza? Essa ação é irreversível.'
-                                    : imovel.ocupado
-                                        ? 'Marcar como disponível?'
-                                        : 'Marcar como ocupado?',
+                                tipo == 'Venda'
+                                    ? 'Marcar este imóvel como VENDIDO e remover da lista?'
+                                    : ocupado
+                                        ? 'O inquilino saiu? Marcar como DISPONÍVEL?'
+                                        : 'Alugado? Marcar como OCUPADO?',
                               ),
                               actions: [
                                 TextButton(
-                                    onPressed: () =>
-                                        Navigator.pop(context, false),
-                                    child: const Text('Cancelar')),
+                                  onPressed: () => Navigator.pop(context, false),
+                                  child: const Text('Cancelar'),
+                                ),
                                 ElevatedButton(
-                                    onPressed: () =>
-                                        Navigator.pop(context, true),
-                                    child: const Text('Confirmar')),
+                                  onPressed: () => Navigator.pop(context, true),
+                                  child: const Text('Confirmar'),
+                                ),
                               ],
                             ),
                           );
 
                           if (confirmar == true) {
-                            setState(() {
-                              if (imovel.tipo == 'Venda') {
-                                todosImoveis.remove(imovel);
-                              } else {
-                                imovel.ocupado =
-                                    !imovel.ocupado;
-                              }
-                              filtrar(filtroSelecionado);
-                            });
+                            if (tipo == 'Venda') {
+                              // Se vendeu, apaga do Firebase
+                              await documento.reference.delete();
+                            } else {
+                              // Se alugou, inverte o status de ocupado
+                              await documento.reference.update({'ocupado': !ocupado});
+                            }
                           }
                         },
                         child: Text(
-                          imovel.tipo == 'Venda'
-                              ? 'Vendido'
-                              : imovel.ocupado
-                                  ? 'Disponível'
-                                  : 'Ocupado',
+                          tipo == 'Venda' ? 'Vendido' : ocupado ? 'Liberar' : 'Alugar',
                         ),
                       ),
                     ],
@@ -323,52 +251,30 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  //////////////////// NAV ////////////////////
-
-  void abrirCadastro() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => CadastroPage(onSalvar: adicionarImovel),
-      ),
-    );
-  }
-
   //////////////////// UI ////////////////////
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[100],
-
       body: Column(
         children: [
-          /// HEADER
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            decoration: const BoxDecoration(
-              color: Colors.blue,
-              borderRadius: BorderRadius.only(
+            padding: const EdgeInsets.only(top: 40, left: 20, right: 20, bottom: 20),
+            decoration: BoxDecoration(
+              color: Colors.blue[900],
+              borderRadius: const BorderRadius.only(
                 bottomLeft: Radius.circular(25),
                 bottomRight: Radius.circular(25),
               ),
             ),
             child: Column(
               children: [
-                const Text(
-                  'ADTEC',
-                  style: TextStyle(
-                    color: Colors.red,
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                const Text('ADTEC', style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 12),
-
                 Row(
-                  mainAxisAlignment:
-                      MainAxisAlignment.spaceEvenly,
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
                     _botaoFiltro('Todos'),
                     _botaoFiltro('Venda'),
@@ -378,31 +284,39 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
           ),
-
-          /// LISTA
           Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              itemCount: imoveis.length,
-              itemBuilder: (_, i) => _cardImovel(imoveis[i]),
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance.collection('imoveis').snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return const Center(child: Text('Nenhum imóvel cadastrado.'));
+                }
+                var documentos = snapshot.data!.docs;
+                if (filtroSelecionado != 'Todos') {
+                  documentos = documentos.where((doc) {
+                    return (doc.data() as Map<String, dynamic>)['tipo'] == filtroSelecionado;
+                  }).toList();
+                }
+                return ListView.builder(
+                  controller: _scrollController,
+                  itemCount: documentos.length,
+                  itemBuilder: (_, i) => _cardImovel(documentos[i]),
+                );
+              },
             ),
           ),
         ],
       ),
-
       floatingActionButton: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
           if (mostrarBotao)
             FloatingActionButton(
               heroTag: 'top',
-              onPressed: () {
-                _scrollController.animateTo(
-                  0,
-                  duration: const Duration(milliseconds: 500),
-                  curve: Curves.easeInOut,
-                );
-              },
+              onPressed: () => _scrollController.animateTo(0, duration: const Duration(milliseconds: 500), curve: Curves.easeInOut),
               child: const Icon(Icons.arrow_upward),
             ),
           const SizedBox(height: 10),
@@ -418,24 +332,21 @@ class _HomePageState extends State<HomePage> {
 
   Widget _botaoFiltro(String texto) {
     bool ativo = filtroSelecionado == texto;
-
     return ElevatedButton(
       onPressed: () => filtrar(texto),
       style: ElevatedButton.styleFrom(
-        backgroundColor: ativo ? Colors.blue : Colors.white,
-        foregroundColor: ativo ? Colors.white : Colors.blue,
+        backgroundColor: ativo ? Colors.red : Colors.white,
+        foregroundColor: ativo ? Colors.white : Colors.black,
       ),
       child: Text(texto),
     );
   }
 }
 
-//////////////////// CADASTRO ////////////////////
+//////////////////// CADASTRO (SALVANDO NO FIREBASE) ////////////////////
 
 class CadastroPage extends StatefulWidget {
-  final Function(Imovel) onSalvar;
-
-  const CadastroPage({super.key, required this.onSalvar});
+  const CadastroPage({super.key});
 
   @override
   State<CadastroPage> createState() => _CadastroPageState();
@@ -443,28 +354,22 @@ class CadastroPage extends StatefulWidget {
 
 class _CadastroPageState extends State<CadastroPage> {
   final picker = ImagePicker();
-
   List<XFile> imagens = [];
   final enderecoController = TextEditingController();
   final precoController = TextEditingController();
-
   String tipo = 'Venda';
+  bool enviando = false;
 
- Future<void> escolherImagens() async {
-  try {
-    final XFile? imagem = await picker.pickImage(
-      source: ImageSource.gallery,
-    );
-
-    if (imagem != null) {
-      setState(() {
-        imagens.add(imagem);
-      });
+  Future<void> escolherImagens() async {
+    try {
+      final XFile? imagem = await picker.pickImage(source: ImageSource.gallery);
+      if (imagem != null) {
+        setState(() => imagens.add(imagem));
+      }
+    } catch (e) {
+      print("Erro: $e");
     }
-  } catch (e) {
-    print("Erro: $e");
   }
-}
 
   Widget previewImagens() {
     return SizedBox(
@@ -476,13 +381,10 @@ class _CadastroPageState extends State<CadastroPage> {
             return Padding(
               padding: const EdgeInsets.only(right: 8),
               child: kIsWeb
-                  ? Image.network(img.path,
-                      width: 160, fit: BoxFit.cover)
-                  : Image.file(File(img.path),
-                      width: 160, fit: BoxFit.cover),
+                  ? Image.network(img.path, width: 160, fit: BoxFit.cover)
+                  : Image.file(File(img.path), width: 160, fit: BoxFit.cover),
             );
           }),
-
           GestureDetector(
             onTap: escolherImagens,
             child: Container(
@@ -496,24 +398,30 @@ class _CadastroPageState extends State<CadastroPage> {
     );
   }
 
-  void salvar() {
-    if (enderecoController.text.isEmpty ||
-        precoController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Preencha tudo')),
-      );
+  Future<void> salvar() async {
+    if (enderecoController.text.isEmpty || precoController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Preencha os dados da casa')));
       return;
     }
 
-    final novo = Imovel(
-      imagens: imagens.map((e) => e.path).toList(),
-      endereco: enderecoController.text,
-      preco: precoController.text,
-      tipo: tipo,
-    );
+    setState(() => enviando = true);
 
-    widget.onSalvar(novo);
-    Navigator.pop(context);
+    try {
+      // Enviando os textos para o banco de dados!
+      await FirebaseFirestore.instance.collection('imoveis').add({
+        'endereco': enderecoController.text,
+        'preco': precoController.text,
+        'tipo': tipo,
+        'ocupado': false,
+        'imagens': [], // Placeholder para as fotos na Fase 3
+        'data_cadastro': DateTime.now(),
+      });
+
+      if (mounted) Navigator.pop(context); // Fecha a tela após salvar
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+      setState(() => enviando = false);
+    }
   }
 
   @override
@@ -526,37 +434,22 @@ class _CadastroPageState extends State<CadastroPage> {
           children: [
             previewImagens(),
             const SizedBox(height: 12),
-            TextField(
-              controller: enderecoController,
-              decoration:
-                  const InputDecoration(labelText: 'Endereço'),
-            ),
-            TextField(
-              controller: precoController,
-              decoration:
-                  const InputDecoration(labelText: 'Preço'),
-            ),
+            TextField(controller: enderecoController, decoration: const InputDecoration(labelText: 'Endereço')),
+            TextField(controller: precoController, decoration: const InputDecoration(labelText: 'Preço')),
             const SizedBox(height: 10),
             DropdownButton<String>(
               value: tipo,
               isExpanded: true,
-              items: ['Venda', 'Aluguel']
-                  .map((e) => DropdownMenuItem(
-                        value: e,
-                        child: Text(e),
-                      ))
-                  .toList(),
-              onChanged: (value) {
-                setState(() {
-                  tipo = value!;
-                });
-              },
+              items: ['Venda', 'Aluguel'].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+              onChanged: (value) => setState(() => tipo = value!),
             ),
             const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: salvar,
-              child: const Text('Salvar'),
-            ),
+            enviando
+                ? const Center(child: CircularProgressIndicator())
+                : ElevatedButton(
+                    onPressed: salvar,
+                    child: const Text('Salvar no Sistema'),
+                  ),
           ],
         ),
       ),
