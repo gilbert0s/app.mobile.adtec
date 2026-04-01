@@ -5,6 +5,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
+import 'package:flutter/services.dart';
+import 'package:brasil_fields/brasil_fields.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -360,41 +362,91 @@ class _CadastroPageState extends State<CadastroPage> {
   String tipo = 'Venda';
   bool enviando = false;
 
+  // SOLUÇÃO 1: Escolher MÚLTIPLAS imagens de uma vez
   Future<void> escolherImagens() async {
     try {
-      final XFile? imagem = await picker.pickImage(source: ImageSource.gallery);
-      if (imagem != null) {
-        setState(() => imagens.add(imagem));
+      final List<XFile> selecionadas = await picker.pickMultiImage();
+      if (selecionadas.isNotEmpty) {
+        setState(() {
+          imagens.addAll(selecionadas);
+        });
       }
     } catch (e) {
       print("Erro: $e");
     }
   }
 
+  // SOLUÇÃO 2: Excluir imagem (O botão X)
+  void removerImagem(int index) {
+    setState(() {
+      imagens.removeAt(index);
+    });
+  }
+
   Widget previewImagens() {
-    return SizedBox(
-      height: 180,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        children: [
-          ...imagens.map((img) {
-            return Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: kIsWeb
-                  ? Image.network(img.path, width: 160, fit: BoxFit.cover)
-                  : Image.file(File(img.path), width: 160, fit: BoxFit.cover),
-            );
-          }),
-          GestureDetector(
-            onTap: escolherImagens,
-            child: Container(
-              width: 120,
-              color: Colors.grey[300],
-              child: const Icon(Icons.add_a_photo, size: 40),
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ElevatedButton.icon(
+          onPressed: escolherImagens,
+          icon: const Icon(Icons.add_a_photo),
+          label: const Text('Adicionar Fotos (Selecione várias)'),
+        ),
+        const SizedBox(height: 10),
+        if (imagens.isNotEmpty)
+          const Text('Dica: Segure e arraste uma foto para mudar a ordem', 
+            style: TextStyle(fontSize: 12, color: Colors.grey)),
+        const SizedBox(height: 5),
+        
+        // SOLUÇÃO 3: Reordenar as fotos arrastando (Drag and Drop)
+        SizedBox(
+          height: 140,
+          child: ReorderableListView(
+            scrollDirection: Axis.horizontal,
+            onReorder: (int oldIndex, int newIndex) {
+              setState(() {
+                if (newIndex > oldIndex) newIndex -= 1;
+                final XFile item = imagens.removeAt(oldIndex);
+                imagens.insert(newIndex, item);
+              });
+            },
+            children: [
+              for (int index = 0; index < imagens.length; index++)
+                Container(
+                  key: ValueKey(imagens[index].path + index.toString()), // Chave única obrigatória para reordenar
+                  margin: const EdgeInsets.only(right: 8),
+                  child: Stack(
+                    children: [
+                      // A Foto
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: kIsWeb
+                            ? Image.network(imagens[index].path, width: 140, height: 140, fit: BoxFit.cover)
+                            : Image.file(File(imagens[index].path), width: 140, height: 140, fit: BoxFit.cover),
+                      ),
+                      // O botão 'X' no canto superior direito
+                      Positioned(
+                        top: 4,
+                        right: 4,
+                        child: GestureDetector(
+                          onTap: () => removerImagem(index),
+                          child: Container(
+                            decoration: const BoxDecoration(
+                              color: Colors.red,
+                              shape: BoxShape.circle,
+                            ),
+                            padding: const EdgeInsets.all(4),
+                            child: const Icon(Icons.close, color: Colors.white, size: 16),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -407,17 +459,16 @@ class _CadastroPageState extends State<CadastroPage> {
     setState(() => enviando = true);
 
     try {
-      // Enviando os textos para o banco de dados!
       await FirebaseFirestore.instance.collection('imoveis').add({
         'endereco': enderecoController.text,
         'preco': precoController.text,
         'tipo': tipo,
         'ocupado': false,
-        'imagens': [], // Placeholder para as fotos na Fase 3
+        'imagens': [], // TODO: Na próxima etapa vamos colocar os links reais aqui!
         'data_cadastro': DateTime.now(),
       });
 
-      if (mounted) Navigator.pop(context); // Fecha a tela após salvar
+      if (mounted) Navigator.pop(context);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
       setState(() => enviando = false);
@@ -435,7 +486,15 @@ class _CadastroPageState extends State<CadastroPage> {
             previewImagens(),
             const SizedBox(height: 12),
             TextField(controller: enderecoController, decoration: const InputDecoration(labelText: 'Endereço')),
-            TextField(controller: precoController, decoration: const InputDecoration(labelText: 'Preço')),
+            TextField(
+              controller: precoController,
+              keyboardType: TextInputType.number, // Abre o teclado numérico no celular
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly, // Aceita só números
+                CentavosInputFormatter(moeda: true),    // Transforma em R$ 0,00
+              ],
+              decoration: const InputDecoration(labelText: 'Preço'),
+            ),
             const SizedBox(height: 10),
             DropdownButton<String>(
               value: tipo,

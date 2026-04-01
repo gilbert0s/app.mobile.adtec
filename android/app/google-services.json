@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "997357711398",
+    "project_id": "appmobileadtec",
+    "storage_bucket": "appmobileadtec.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:997357711398:android:b4942a2fae6f04c20f76e7",
+        "android_client_info": {
+          "package_name": "com.example.flutter_application_1"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAJf6ypky9Ta1hFE_YsDhoBM5O3OkyKBpw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
