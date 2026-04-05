@@ -7,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
 import 'package:flutter/services.dart';
 import 'package:brasil_fields/brasil_fields.dart';
+import 'package:flutter/gestures.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,9 +24,12 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
+    return MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: SplashPage(),
+      scrollBehavior: const MaterialScrollBehavior().copyWith(
+        dragDevices: {PointerDeviceKind.mouse, PointerDeviceKind.touch},
+      ),
+      home: const SplashPage(),
     );
   }
 }
@@ -90,19 +94,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  final ScrollController _scrollController = ScrollController();
-  bool mostrarBotao = false;
   String filtroSelecionado = 'Todos';
-
-  @override
-  void initState() {
-    super.initState();
-    _scrollController.addListener(() {
-      setState(() {
-        mostrarBotao = _scrollController.offset > 300;
-      });
-    });
-  }
 
   void filtrar(String tipo) {
     setState(() {
@@ -117,7 +109,82 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  //////////////////// CARROSSEL ////////////////////
+  void mostrarJanelaEdicao(BuildContext context, String docId, String enderecoAtual, String precoAtual) {
+    final enderecoEditController = TextEditingController(text: enderecoAtual);
+    final precoEditController = TextEditingController(text: precoAtual);
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Editar Dados do Imóvel'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: enderecoEditController,
+                decoration: const InputDecoration(labelText: 'Endereço'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: precoEditController,
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  CentavosInputFormatter(moeda: true),
+                ],
+                decoration: const InputDecoration(labelText: 'Preço'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Confirmar Alteração'),
+                    content: const Text('Deseja salvar as novas informações deste imóvel?'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Voltar'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () async {
+                          await FirebaseFirestore.instance
+                              .collection('imoveis')
+                              .doc(docId)
+                              .update({
+                            'endereco': enderecoEditController.text,
+                            'preco': precoEditController.text,
+                          });
+                          if (context.mounted) {
+                            Navigator.pop(context);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Imóvel atualizado com sucesso!'))
+                            );
+                          }
+                        },
+                        child: const Text('Sim, Confirmar'),
+                      ),
+                    ],
+                  ),
+                );
+              },
+              child: const Text('Salvar Alterações'),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   Widget _carrossel(List<dynamic> imagens) {
     if (imagens.isEmpty) {
@@ -128,7 +195,6 @@ class _HomePageState extends State<HomePage> {
         child: const Center(child: Icon(Icons.image, size: 50, color: Colors.grey)),
       );
     }
-    // TODO: Na Fase das fotos, vamos arrumar para puxar da internet
     return Container(
       height: 180,
       width: double.infinity,
@@ -137,10 +203,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  //////////////////// CARD COM AÇÕES DO FIREBASE ////////////////////
-
   Widget _cardImovel(DocumentSnapshot documento) {
-    // Pegando os dados e o ID do documento no Firebase
     Map<String, dynamic> imovel = documento.data() as Map<String, dynamic>;
     String endereco = imovel['endereco'] ?? 'Sem endereço';
     String preco = imovel['preco'] ?? 'R\$ 0,00';
@@ -201,46 +264,60 @@ class _HomePageState extends State<HomePage> {
                           Text(ocupado ? 'Ocupado' : 'Disponível'),
                         ],
                       ),
-                      // Botão para a atendente atualizar o banco de dados
-                      ElevatedButton(
-                        onPressed: () async {
-                          bool? confirmar = await showDialog(
-                            context: context,
-                            builder: (_) => AlertDialog(
-                              title: const Text('Atualizar Sistema'),
-                              content: Text(
-                                tipo == 'Venda'
-                                    ? 'Marcar este imóvel como VENDIDO e remover da lista?'
-                                    : ocupado
-                                        ? 'O inquilino saiu? Marcar como DISPONÍVEL?'
-                                        : 'Alugado? Marcar como OCUPADO?',
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(context, false),
-                                  child: const Text('Cancelar'),
+                      Row(
+                        children: [
+                          TextButton.icon(
+                            icon: const Icon(Icons.edit, size: 18),
+                            label: const Text('EDITAR'),
+                            onPressed: () {
+                              mostrarJanelaEdicao(
+                                context, 
+                                documento.id, 
+                                endereco, 
+                                preco
+                              );
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                          ElevatedButton(
+                            onPressed: () async {
+                              bool? confirmar = await showDialog(
+                                context: context,
+                                builder: (_) => AlertDialog(
+                                  title: const Text('Atualizar Sistema'),
+                                  content: Text(
+                                    tipo == 'Venda'
+                                        ? 'Marcar este imóvel como VENDIDO e remover da lista?'
+                                        : ocupado
+                                            ? 'O inquilino saiu? Marcar como DISPONÍVEL?'
+                                            : 'Alugado? Marcar como OCUPADO?',
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(context, false),
+                                      child: const Text('Cancelar'),
+                                    ),
+                                    ElevatedButton(
+                                      onPressed: () => Navigator.pop(context, true),
+                                      child: const Text('Confirmar'),
+                                    ),
+                                  ],
                                 ),
-                                ElevatedButton(
-                                  onPressed: () => Navigator.pop(context, true),
-                                  child: const Text('Confirmar'),
-                                ),
-                              ],
-                            ),
-                          );
+                              );
 
-                          if (confirmar == true) {
-                            if (tipo == 'Venda') {
-                              // Se vendeu, apaga do Firebase
-                              await documento.reference.delete();
-                            } else {
-                              // Se alugou, inverte o status de ocupado
-                              await documento.reference.update({'ocupado': !ocupado});
-                            }
-                          }
-                        },
-                        child: Text(
-                          tipo == 'Venda' ? 'Vendido' : ocupado ? 'Liberar' : 'Alugar',
-                        ),
+                              if (confirmar == true) {
+                                if (tipo == 'Venda') {
+                                  await documento.reference.delete();
+                                } else {
+                                  await documento.reference.update({'ocupado': !ocupado});
+                                }
+                              }
+                            },
+                            child: Text(
+                              tipo == 'Venda' ? 'Vendido' : ocupado ? 'Liberar' : 'Alugar',
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -252,8 +329,6 @@ class _HomePageState extends State<HomePage> {
       ),
     );
   }
-
-  //////////////////// UI ////////////////////
 
   @override
   Widget build(BuildContext context) {
@@ -272,8 +347,8 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
             child: Column(
-              children: [
-                const Text('ADTEC', style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold)),
+                children: [
+                Image.asset('assets/icon.png', height: 85), 
                 const SizedBox(height: 12),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -303,7 +378,6 @@ class _HomePageState extends State<HomePage> {
                   }).toList();
                 }
                 return ListView.builder(
-                  controller: _scrollController,
                   itemCount: documentos.length,
                   itemBuilder: (_, i) => _cardImovel(documentos[i]),
                 );
@@ -312,22 +386,10 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      floatingActionButton: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          if (mostrarBotao)
-            FloatingActionButton(
-              heroTag: 'top',
-              onPressed: () => _scrollController.animateTo(0, duration: const Duration(milliseconds: 500), curve: Curves.easeInOut),
-              child: const Icon(Icons.arrow_upward),
-            ),
-          const SizedBox(height: 10),
-          FloatingActionButton(
-            heroTag: 'add',
-            onPressed: abrirCadastro,
-            child: const Icon(Icons.add),
-          ),
-        ],
+      // O botão principal ficou sozinho e feliz aqui:
+      floatingActionButton: FloatingActionButton(
+        onPressed: abrirCadastro,
+        child: const Icon(Icons.add),
       ),
     );
   }
@@ -362,7 +424,6 @@ class _CadastroPageState extends State<CadastroPage> {
   String tipo = 'Venda';
   bool enviando = false;
 
-  // SOLUÇÃO 1: Escolher MÚLTIPLAS imagens de uma vez
   Future<void> escolherImagens() async {
     try {
       final List<XFile> selecionadas = await picker.pickMultiImage();
@@ -376,7 +437,6 @@ class _CadastroPageState extends State<CadastroPage> {
     }
   }
 
-  // SOLUÇÃO 2: Excluir imagem (O botão X)
   void removerImagem(int index) {
     setState(() {
       imagens.removeAt(index);
@@ -398,7 +458,6 @@ class _CadastroPageState extends State<CadastroPage> {
             style: TextStyle(fontSize: 12, color: Colors.grey)),
         const SizedBox(height: 5),
         
-        // SOLUÇÃO 3: Reordenar as fotos arrastando (Drag and Drop)
         SizedBox(
           height: 140,
           child: ReorderableListView(
@@ -413,18 +472,16 @@ class _CadastroPageState extends State<CadastroPage> {
             children: [
               for (int index = 0; index < imagens.length; index++)
                 Container(
-                  key: ValueKey(imagens[index].path + index.toString()), // Chave única obrigatória para reordenar
+                  key: ValueKey(imagens[index].path + index.toString()),
                   margin: const EdgeInsets.only(right: 8),
                   child: Stack(
                     children: [
-                      // A Foto
                       ClipRRect(
                         borderRadius: BorderRadius.circular(8),
                         child: kIsWeb
                             ? Image.network(imagens[index].path, width: 140, height: 140, fit: BoxFit.cover)
                             : Image.file(File(imagens[index].path), width: 140, height: 140, fit: BoxFit.cover),
                       ),
-                      // O botão 'X' no canto superior direito
                       Positioned(
                         top: 4,
                         right: 4,
@@ -464,7 +521,7 @@ class _CadastroPageState extends State<CadastroPage> {
         'preco': precoController.text,
         'tipo': tipo,
         'ocupado': false,
-        'imagens': [], // TODO: Na próxima etapa vamos colocar os links reais aqui!
+        'imagens': [], 
         'data_cadastro': DateTime.now(),
       });
 
@@ -488,10 +545,10 @@ class _CadastroPageState extends State<CadastroPage> {
             TextField(controller: enderecoController, decoration: const InputDecoration(labelText: 'Endereço')),
             TextField(
               controller: precoController,
-              keyboardType: TextInputType.number, // Abre o teclado numérico no celular
+              keyboardType: TextInputType.number,
               inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly, // Aceita só números
-                CentavosInputFormatter(moeda: true),    // Transforma em R$ 0,00
+                FilteringTextInputFormatter.digitsOnly,
+                CentavosInputFormatter(moeda: true),
               ],
               decoration: const InputDecoration(labelText: 'Preço'),
             ),
